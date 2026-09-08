@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+    Advanced Diff Bot Configuration
+    Version: 2.3.1
+    Features:
+    - Multi-source comparisons
+    - Smart matching algorithms
+    - Custom difference thresholds
+    - Automated reporting
+    - Notification system
+-->
+<DiffBot xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+         xsi:schemaLocation="http://www.diffbot.com/schema diffbot_v2.xsd">
+    
+    <!-- ========== SYSTEM CONFIGURATION ========== -->
+    <SystemConfig>
+        <ExecutionMode>Auto</ExecutionMode> <!-- Auto|Manual|Scheduled -->
+        <Schedule>
+            <CronExpression>0 0 2 * * ?</CronExpression> <!-- Daily at 2 AM -->
+            <TimeZone>UTC</TimeZone>
+        </Schedule>
+        <Concurrency>4</Concurrency>
+        <MemoryLimit>2GB</MemoryLimit>
+        <Timeout>3600</Timeout> <!-- 1 hour -->
+        <Logging>
+            <Level>Detailed</Level>
+            <Path>/logs/diffbot</Path>
+            <Retention>30</Retention> <!-- days -->
+        </Logging>
+    </SystemConfig>
+
+    <!-- ========== COMPARISON ENGINE ========== -->
+    <ComparisonEngine>
+        <Algorithm>
+            <Name>EnhancedLCS</Name> <!-- LongestCommonSubsequence -->
+            <Version>3.2</Version>
+            <Options>
+                <TokenGranularity>Word</TokenGranularity> <!-- Char|Word|Line -->
+                <MatchThreshold>0.85</MatchThreshold> <!-- 0-1 -->
+                <FuzzyMatching>true</FuzzyMatching>
+                <FuzzyOptions>
+                    <IgnoreCase>true</IgnoreCase>
+                    <IgnorePunctuation>true</IgnorePunctuation>
+                    <SynonymsFile>/config/synonyms.xml</SynonymsFile>
+                </FuzzyOptions>
+            </Options>
+        </Algorithm>
+        
+        <Preprocessors>
+            <Preprocessor type="NormalizeWhitespace" order="1" />
+            <Preprocessor type="RemoveComments" order="2" />
+            <Preprocessor type="CanonicalizeXML" order="3" />
+            <Preprocessor type="ResolveEntities" order="4" />
+        </Preprocessors>
+        
+        <Postprocessors>
+            <Postprocessor type="ClusterChanges" groupSimilar="true" threshold="0.7" />
+            <Postprocessor type="CategorizeChanges" />
+        </Postprocessors>
+    </ComparisonEngine>
+
+    <!-- ========== DATA SOURCES ========== -->
+    <DataSources>
+        <Source id="prod_db" type="SQL">
+            <Connection>
+                <Server>prod-db.example.com</Server>
+                <Database>ApplicationDB</Database>
+                <Authentication>
+                    <Type>Windows</Type>
+                    <EncryptedCredentials>AQAAANCMnd8BFd...</EncryptedCredentials>
+                </Authentication>
+            </Connection>
+            <Extraction>
+                <Query>SELECT * FROM Documents WHERE Status = 'Active'</Query>
+                <KeyColumns>DocumentID</KeyColumns>
+                <BatchSize>1000</BatchSize>
+            </Extraction>
+        </Source>
+        
+        <Source id="test_env" type="REST">
+            <Endpoint>https://testapi.example.com/v2/documents</Endpoint>
+            <Authentication>
+                <Type>OAuth2</Type>
+                <TokenEndpoint>https://auth.example.com/token</TokenEndpoint>
+                <ClientId>diffbot-client</ClientId>
+                <ClientSecret encrypted="true">AQAAANCMnd8BFd...</ClientSecret>
+            </Authentication>
+            <Parameters>
+                <Param name="status" value="active" />
+                <Param name="fields" value="all" />
+            </Parameters>
+            <Pagination>
+                <Type>Offset</Type>
+                <Size>100</Size>
+            </Pagination>
+        </Source>
+        
+        <Source id="gold_standard" type="FileSystem">
+            <Path>/data/gold_standards</Path>
+            <Format>XML</Format>
+            <Filter>*.xml</Filter>
+            <Recursive>true</Recursive>
+        </Source>
+    </DataSources>
+
+    <!-- ========== COMPARISON JOBS ========== -->
+    <Jobs>
+        <Job id="daily_validation" enabled="true" priority="High">
+            <Name>Production vs Test Validation</Name>
+            <Description>Daily comparison between production and test environments</Description>
+            
+            <Sources>
+                <Left ref="prod_db" />
+                <Right ref="test_env" />
+            </Sources>
+            
+            <Mapping>
+                <Field left="DocumentID" right="id" />
+                <Field left="Title" right="header.title" xpath="true" />
+                <Field left="Content" right="body.content" transform="HtmlToText" />
+                <Field left="LastModified" right="metadata.updated" format="yyyy-MM-ddTHH:mm:ss" />
+            </Mapping>
+            
+            <ComparisonRules>
+                <Rule field="Title" type="Text" algorithm="Levenshtein" threshold="0.9" />
+                <Rule field="Content" type="Text" algorithm="CosineSimilarity" threshold="0.85" />
+                <Rule field="LastModified" type="DateTime" tolerance="600" unit="seconds" />
+                <Ignore field="InternalID" />
+                <Ignore field="SystemMetadata" />
+            </ComparisonRules>
+            
+            <Validation>
+                <RequiredFields>Title,Content</RequiredFields>
+                <ContentRules>
+                    <Rule type="XSDValidation" schema="/schemas/document.xsd" />
+                    <Rule type="RegEx" pattern="^[A-Z].*" field="Title" />
+                </ContentRules>
+            </Validation>
+        </Job>
+        
+        <Job id="weekly_audit" enabled="true" priority="Medium">
+            <!-- Additional job configuration -->
+        </Job>
+    </Jobs>
+
+    <!-- ========== OUTPUT & REPORTING ========== -->
+    <OutputConfiguration>
+        <Reports>
+            <Report type="Summary" format="HTML" destination="/reports/summary.html" />
+            <Report type="Detailed" format="XML" destination="/reports/detailed_changes.xml" />
+            <Report type="Annotated" format="PDF" destination="/reports/annotated_diff.pdf">
+                <Options>
+                    <HighlightChanges>true</HighlightChanges>
+                    <ColorScheme>GreenRed</ColorScheme>
+                    <IncludeContext>3</IncludeContext> <!-- lines -->
+                </Options>
+            </Report>
+        </Reports>
+        
+        <DataOutput>
+            <DeltaFormat>XMLPatch</DeltaFormat>
+            <Destination type="Database">
+                <ConnectionString>Server=reporting;Database=difflogs;...</ConnectionString>
+                <TableName>ChangeRecords</TableName>
+            </Destination>
+        </DataOutput>
+        
+        <Dashboard>
+            <Enabled>true</Enabled>
+            <Endpoint>/dashboard/data</Endpoint>
+            <RefreshInterval>60</RefreshInterval> <!-- seconds -->
+        </Dashboard>
+    </OutputConfiguration>
+
+    <!-- ========== NOTIFICATION SYSTEM ========== -->
+    <Notifications>
+        <Email enabled="true">
+            <Conditions>
+                <Condition type="OnFailure" />
+                <Condition type="OnCriticalDifference" threshold="0.5" />
+                <Condition type="Summary" schedule="Daily" time="08:00" />
+            </Conditions>
+            <Recipients>
+                <Group name="DevTeam" distribution="dev-team@example.com" />
+                <Group name="QA" distribution="qa-team@example.com" />
+                <Individual email="project.manager@example.com" />
+            </Recipients>
+            <SMTP>
+                <Server>smtp.corp.example.com</Server>
+                <Port>587</Port>
+                <Security>StartTLS</Security>
+            </SMTP>
+            <Templates>
+                <Template type="Failure" subject="[URGENT] Diff Bot Failure">
+                    <Body templateFile="/templates/email_failure.html" />
+                </Template>
+            </Templates>
+        </Email>
+        
+        <Webhook enabled="true">
+            <Endpoint>https://alerts.example.com/api/v1/alert</Endpoint>
+            <Events>Failure,CriticalDifference</Events>
+            <Authentication>
+                <Type>Bearer</Type>
+                <Token encrypted="true">AQAAANCMnd8BFd...</Token>
+            </Authentication>
+        </Webhook>
+    </Notifications>
+
+    <!-- ========== ERROR HANDLING ========== -->
+    <ErrorHandling>
+        <RetryPolicy>
+            <MaxAttempts>3</MaxAttempts>
+            <Delay>30000</Delay> <!-- milliseconds -->
+            <Backoff>Exponential</Backoff>
+        </RetryPolicy>
+        <FallbackBehavior>ContinueWithWarning</FallbackBehavior>
+        <CriticalErrors>
+            <Error code="DB_CONNECTION" action="Stop" />
+            <Error code="AUTH_FAILURE" action="NotifyAndStop" />
+            <Error code="MEMORY_OVERFLOW" action="ReduceBatchSize" newSize="500" />
+        </CriticalErrors>
+    </ErrorHandling>
+</DiffBot>
